@@ -1,4 +1,4 @@
-(defproject ring/ring-servlet "1.2.0-beta2"
+(defproject ring/ring-servlet "1.2.0-beta2-SNAPSHOT"
   :description "Ring servlet utilities."
   :url "https://github.com/ring-clojure/ring"
   :license {:name "The MIT License"
