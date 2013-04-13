@@ -115,14 +115,13 @@
 
 (defmacro async-response
   [& forms]
-  (fn [async-context#]
-    (if-let [response-map# (do ~@forms)]
-      (do
-        (update-servlet-response (.getResponse async-context#) response-map#)
-        (.complete async-context#))
-      (do
-        (.complete async-context#)
-        (throw (NullPointerException. "async handler returned nil"))))))
+  `{:async
+    (fn [async-context#]
+      (try
+        (if-let [response-map# (do ~@forms)]
+          (update-servlet-response (.getResponse async-context#) response-map#)
+          (throw (NullPointerException. "async handler returned nil")))
+        (finally (.complete async-context#))))})
 
 (defn make-service-method
   "Turns a handler into a function that takes the same arguments and has the
@@ -134,15 +133,15 @@
     (let [request-map (-> request
                           (build-request-map)
                           (merge-servlet-keys servlet request response))]
-      (let [response-ret (handler request-map)]
+      (let [response-map (handler request-map)]
         (cond
-          (fn? response-ret)
+          (:async response-map)
             (let [async-context (.startAsync request request response)]
-              (.start response-ret)
-          (nil? response-ret)
+              (.start async-context (fn [] ((:async response-map) async-context))))
+          (nil? response-map)
             (throw (NullPointerException. "Handler returned nil"))
           :else
-            (update-servlet-response response response-ret)))))))
+            (update-servlet-response response response-map))))))
 
 (defn servlet
   "Create a servlet from a Ring handler.."
