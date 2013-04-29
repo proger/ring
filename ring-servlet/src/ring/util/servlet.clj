@@ -149,9 +149,13 @@
                 (fn? async-fn)
                   (.start async-context (fn [] (async-fn async-context)))
                 (instance? clojure.lang.Atom async-fn) 
-                  (add-watch async-fn (gensym "ring-servlet-watch-")
+                  (let [atom-value @async-fn]
+                    (add-watch async-fn (gensym "ring-servlet-watch-")
                              (fn [key ref old-state new-state]
                                (async-complete-response async-context new-state)))
+                    (when (fn? atom-value) ; actually start the job if it's a fn -- prevents race conditions
+                      (atom-value async-fn))
+                    nil)
                 :else
                  (throw (NullPointerException. "bad async arg"))))
           (nil? response-map)
