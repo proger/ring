@@ -113,15 +113,21 @@
     (set-headers headers)
     (set-body body)))
 
+(defn async-complete-response
+  [async-context response-map]
+  (try
+    (cond
+      (nil? response-map)
+        (throw (NullPointerException. "async handler returned nil"))
+      :else
+        (update-servlet-response (.getResponse async-context) response-map))
+    (finally (.complete async-context))))
+
 (defmacro async-response
   [& forms]
   `{:async
     (fn [async-context#]
-      (try
-        (if-let [response-map# (do ~@forms)]
-          (update-servlet-response (.getResponse async-context#) response-map#)
-          (throw (NullPointerException. "async handler returned nil")))
-        (finally (.complete async-context#))))})
+      (async-complete-response async-context# (do ~@forms)))})
 
 (defn make-service-method
   "Turns a handler into a function that takes the same arguments and has the
@@ -136,8 +142,18 @@
       (let [response-map (handler request-map)]
         (cond
           (:async response-map)
-            (let [async-context (.startAsync request request response)]
-              (.start async-context (fn [] ((:async response-map) async-context))))
+            (let [async-context (.startAsync request request response)
+                  async-fn (:async response-map)]
+              (.setTimeout async-context 0)
+              (cond
+                (fn? async-fn)
+                  (.start async-context (fn [] (async-fn async-context)))
+                (instance? clojure.lang.Atom async-fn) 
+                  (add-watch async-fn (gensym "ring-servlet-watch-")
+                             (fn [key ref old-state new-state]
+                               (async-complete-response async-context new-state)))
+                :else
+                 (throw (NullPointerException. "bad async arg"))))
           (nil? response-map)
             (throw (NullPointerException. "Handler returned nil"))
           :else
